@@ -61,6 +61,7 @@
   }
   button:active { transform: translateY(2px); }
   .small-btn { padding: 10px 13px; font-size: 13px; }
+  #soundBtn[aria-pressed="false"] { opacity: .72; }
   .main-layout {
     display: grid;
     grid-template-columns: 1fr 130px;
@@ -142,7 +143,42 @@
   }
   .wide { grid-column: span 2; font-size: 17px; }
   .drop { background: linear-gradient(135deg, #ffb24a, #ff6876); }
+  #dropBtn {
+    margin-top: 16px;
+    min-height: 46px;
+    width: 82%;
+    justify-self: center;
+    font-size: 14px;
+    padding: 8px 10px;
+  }
   .rotate { background: linear-gradient(135deg, #6c7dff, #af62ff); }
+  .ranking-panel {
+    margin-top: 14px;
+    background: var(--panel);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 12px;
+  }
+  .ranking-panel[hidden], .gameover-name-entry[hidden] { display: none !important; }
+  .gameover-name-entry { display: grid; gap: 8px; margin: 12px 0; }
+  .name-input {
+    width: 100%; min-width: 0; border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 12px; background: #0a0f20; color: var(--text);
+    font: inherit; font-size: 16px; padding: 11px 12px; outline: none;
+  }
+  .name-input:focus { border-color: var(--accent); }
+  .save-name-btn { padding: 11px 14px; background: linear-gradient(135deg, #44d7ff, #6175ff); }
+  .name-save-message { min-height: 18px; color: var(--accent); font-size: 12px; font-weight: 800; }
+  .ranking-list { margin: 10px 0 0; padding: 0; list-style: none; }
+  .ranking-item {
+    display: grid; grid-template-columns: 32px 1fr auto; gap: 8px; align-items: center;
+    padding: 7px 2px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 14px;
+  }
+  .ranking-item:first-child { border-top: 0; }
+  .rank-no { color: var(--accent); font-weight: 900; }
+  .rank-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-score { font-weight: 900; }
+  .ranking-empty { color: var(--muted); font-size: 13px; padding: 8px 2px 2px; }
   .footer-note {
     text-align: center;
     color: var(--muted);
@@ -165,6 +201,7 @@
   <div class="header">
     <h1>TETRIS</h1>
     <div class="top-buttons">
+      <button id="soundBtn" class="small-btn" aria-pressed="true">🔊 音あり</button>
       <button id="pauseBtn" class="small-btn">一時停止</button>
       <button id="resetBtn" class="small-btn">やり直す</button>
     </div>
@@ -177,6 +214,11 @@
         <div class="overlay-card">
           <div id="overlayTitle" class="overlay-title">ゲームオーバー</div>
           <div id="overlayText" class="overlay-text">もう一度挑戦しよう！</div>
+          <div id="gameOverNameEntry" class="gameover-name-entry" hidden>
+            <input id="playerName" class="name-input" type="text" maxlength="10" placeholder="名前を入力" autocomplete="nickname" />
+            <button id="saveNameBtn" class="save-name-btn" type="button">ランキング登録</button>
+            <div id="nameSaveMessage" class="name-save-message" aria-live="polite"></div>
+          </div>
           <button id="overlayRestart" class="restart-main">もう一度遊ぶ</button>
         </div>
       </div>
@@ -218,6 +260,10 @@
     <button id="dropBtn" class="control-btn wide drop">一気に落下</button>
     <button id="pauseMobileBtn" class="control-btn wide">一時停止</button>
   </div>
+  <section id="rankingPanel" class="ranking-panel" aria-labelledby="rankingTitle" hidden>
+    <div id="rankingTitle" class="label">ランキング</div>
+    <ol id="rankingList" class="ranking-list"></ol>
+  </section>
   <div class="footer-note">横一列そろえるとブロックが消えます</div>
 </div>
 
@@ -240,7 +286,16 @@
   const overlayTitle = document.getElementById('overlayTitle');
   const overlayText = document.getElementById('overlayText');
   const pauseBtn = document.getElementById('pauseBtn');
+  const soundBtn = document.getElementById('soundBtn');
   const pauseMobileBtn = document.getElementById('pauseMobileBtn');
+  const playerNameEl = document.getElementById('playerName');
+  const saveNameBtn = document.getElementById('saveNameBtn');
+  const gameOverNameEntry = document.getElementById('gameOverNameEntry');
+  const nameSaveMessage = document.getElementById('nameSaveMessage');
+  const rankingListEl = document.getElementById('rankingList');
+  const rankingPanel = document.getElementById('rankingPanel');
+  const RANKING_KEY = 'tetrisRankingV1';
+  const NAME_KEY = 'tetrisPlayerNameV1';
 
   const COLORS = [
     null,
@@ -275,6 +330,169 @@
   let paused;
   let gameOver;
   let animationId;
+  let scoreSavedForCurrentGame = false;
+
+  let audioCtx = null;
+  let masterGain = null;
+  let bgmTimer = null;
+  let bgmStep = 0;
+  let soundEnabled = true;
+  let audioUnlocked = false;
+
+  const BGM_NOTES = [
+    329.63, 246.94, 261.63, 293.66, 261.63, 246.94, 220.00, 220.00,
+    261.63, 329.63, 293.66, 261.63, 246.94, 246.94, 261.63, 293.66,
+    329.63, 261.63, 220.00, 220.00, 0, 293.66, 349.23, 440.00
+  ];
+
+  async function ensureAudio() {
+    if (!soundEnabled) return false;
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return false;
+      audioCtx = new AC();
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = 0.34;
+      masterGain.connect(audioCtx.destination);
+    }
+    try {
+      if (audioCtx.state !== 'running') await audioCtx.resume();
+      audioUnlocked = audioCtx.state === 'running';
+      if (audioUnlocked && masterGain) masterGain.gain.setValueAtTime(0.34, audioCtx.currentTime);
+      if (audioUnlocked) startBgm();
+      return audioUnlocked;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function tone(freq, duration = 0.08, type = 'square', volume = 0.12, delay = 0) {
+    if (!soundEnabled || !audioCtx || audioCtx.state !== 'running' || !masterGain || !freq) return;
+    const now = audioCtx.currentTime + delay;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(volume, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + duration + 0.02);
+  }
+
+  function playMoveSound() { tone(150, 0.035, 'square', 0.07); }
+  function playRotateSound() { tone(420, 0.055, 'square', 0.09); tone(620, 0.045, 'square', 0.06, 0.025); }
+  function playDropSound() { tone(180, 0.07, 'sawtooth', 0.12); tone(90, 0.11, 'square', 0.10, 0.035); }
+  function playLockSound() { tone(110, 0.05, 'square', 0.08); }
+  function playLineSound(count) {
+    const notes = count >= 4 ? [523.25, 659.25, 783.99, 1046.50] : [392.00, 523.25, 659.25];
+    notes.forEach((n, i) => tone(n, 0.12, 'square', 0.12, i * 0.07));
+  }
+  function playGameOverSound() {
+    stopBgm();
+    [329.63, 293.66, 261.63, 196.00, 130.81].forEach((n, i) => tone(n, 0.22, 'sawtooth', 0.13, i * 0.14));
+  }
+
+  function startBgm() {
+    if (!soundEnabled || bgmTimer || paused || gameOver || !audioCtx || audioCtx.state !== 'running') return;
+    bgmTimer = setInterval(() => {
+      if (paused || gameOver || !soundEnabled) return;
+      const note = BGM_NOTES[bgmStep % BGM_NOTES.length];
+      if (note) {
+        tone(note, 0.14, 'square', 0.09);
+        tone(note / 2, 0.18, 'triangle', 0.055);
+        if (bgmStep % 2 === 0) tone(82.41, 0.07, 'sine', 0.045);
+      }
+      bgmStep++;
+    }, 165);
+  }
+
+  function stopBgm() {
+    if (bgmTimer) clearInterval(bgmTimer);
+    bgmTimer = null;
+  }
+
+  async function toggleSound() {
+    soundEnabled = !soundEnabled;
+    soundBtn.setAttribute('aria-pressed', String(soundEnabled));
+    soundBtn.textContent = soundEnabled ? '🔊 音あり' : '🔇 音なし';
+    if (soundEnabled) {
+      await ensureAudio();
+      startBgm();
+    } else {
+      stopBgm();
+      if (masterGain && audioCtx) masterGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    }
+  }
+
+
+
+  function safeLoad(key, fallback) {
+    try {
+      const value = localStorage.getItem(key);
+      return value ? JSON.parse(value) : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function safeSave(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+  }
+
+  function cleanName(value) {
+    return value.trim().replace(/\s+/g, ' ').slice(0, 10) || '名無し';
+  }
+
+  function getRanking() {
+    const data = safeLoad(RANKING_KEY, []);
+    return Array.isArray(data) ? data : [];
+  }
+
+  function renderRanking() {
+    const ranking = getRanking().slice(0, 5);
+    rankingListEl.innerHTML = '';
+    if (ranking.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'ranking-empty';
+      li.textContent = 'まだ記録がありません';
+      rankingListEl.appendChild(li);
+      return;
+    }
+    ranking.forEach((entry, index) => {
+      const li = document.createElement('li');
+      li.className = 'ranking-item';
+      const no = document.createElement('span');
+      no.className = 'rank-no';
+      no.textContent = `${index + 1}位`;
+      const name = document.createElement('span');
+      name.className = 'rank-name';
+      name.textContent = entry.name;
+      const point = document.createElement('span');
+      point.className = 'rank-score';
+      point.textContent = `${Number(entry.score || 0).toLocaleString('ja-JP')}点`;
+      li.append(no, name, point);
+      rankingListEl.appendChild(li);
+    });
+  }
+
+  function registerGameOverScore() {
+    if (!gameOver || scoreSavedForCurrentGame) return;
+    const name = cleanName(playerNameEl.value || safeLoad(NAME_KEY, '名無し'));
+    playerNameEl.value = name === '名無し' ? '' : name;
+    safeSave(NAME_KEY, name);
+    scoreSavedForCurrentGame = true;
+    const ranking = getRanking();
+    ranking.push({ name, score, lines, date: Date.now() });
+    ranking.sort((a, b) => Number(b.score || 0) - Number(a.score || 0) || Number(b.lines || 0) - Number(a.lines || 0));
+    safeSave(RANKING_KEY, ranking.slice(0, 20));
+    renderRanking();
+    saveNameBtn.disabled = true;
+    saveNameBtn.textContent = '登録済み';
+    nameSaveMessage.textContent = `${name}さんの記録を登録しました`;
+  }
 
   function createMatrix(w, h) {
     return Array.from({ length: h }, () => Array(w).fill(0));
@@ -296,14 +514,21 @@
     lastTime = performance.now();
     paused = false;
     gameOver = false;
+    scoreSavedForCurrentGame = false;
     nextPiece = randomPiece();
     player = { pos: { x: 0, y: 0 }, matrix: null };
     overlay.classList.remove('show');
+    gameOverNameEntry.hidden = true;
+    rankingPanel.hidden = true;
+    saveNameBtn.disabled = false;
+    saveNameBtn.textContent = 'ランキング登録';
+    nameSaveMessage.textContent = '';
     setPauseText();
     spawnPlayer();
     updateStats();
     cancelAnimationFrame(animationId);
     animationId = requestAnimationFrame(update);
+    if (soundEnabled && audioCtx) startBgm();
   }
 
   function spawnPlayer() {
@@ -356,6 +581,7 @@
       level = Math.floor(lines / 10) + 1;
       dropInterval = Math.max(120, 850 - (level - 1) * 70);
       updateStats();
+      playLineSound(rowCount);
     }
   }
 
@@ -382,12 +608,14 @@
         return;
       }
     }
+    playRotateSound();
   }
 
   function playerMove(dir) {
     if (paused || gameOver) return;
     player.pos.x += dir;
     if (collide(arena, player)) player.pos.x -= dir;
+    else playMoveSound();
   }
 
   function playerDrop(manual = false) {
@@ -396,6 +624,7 @@
     if (collide(arena, player)) {
       player.pos.y--;
       merge(arena, player);
+      playLockSound();
       sweep();
       spawnPlayer();
     } else if (manual) {
@@ -416,6 +645,7 @@
     distance--;
     score += Math.max(0, distance) * 2;
     merge(arena, player);
+    playDropSound();
     sweep();
     spawnPlayer();
     updateStats();
@@ -492,6 +722,9 @@
     paused = !paused;
     setPauseText();
     if (paused) {
+      stopBgm();
+      gameOverNameEntry.hidden = true;
+      rankingPanel.hidden = true;
       overlayTitle.textContent = '一時停止';
       overlayText.textContent = '「再開」を押すと続きから遊べます';
       document.getElementById('overlayRestart').textContent = '再開';
@@ -499,6 +732,7 @@
     } else {
       overlay.classList.remove('show');
       lastTime = performance.now();
+      startBgm();
     }
   }
 
@@ -510,13 +744,25 @@
 
   function endGame() {
     gameOver = true;
+    playGameOverSound();
     overlayTitle.textContent = 'ゲームオーバー';
     overlayText.textContent = `スコア ${score.toLocaleString('ja-JP')} 点`;
+    gameOverNameEntry.hidden = false;
+    rankingPanel.hidden = false;
+    saveNameBtn.disabled = false;
+    saveNameBtn.textContent = 'ランキング登録';
+    nameSaveMessage.textContent = '';
     document.getElementById('overlayRestart').textContent = 'もう一度遊ぶ';
     overlay.classList.add('show');
+    setTimeout(() => playerNameEl.focus(), 120);
   }
 
+
+  document.addEventListener('pointerdown', async () => {
+    if (soundEnabled && !audioUnlocked) await ensureAudio();
+  }, { once: true, passive: true });
   document.addEventListener('keydown', (e) => {
+    ensureAudio();
     const key = e.key.toLowerCase();
     if (['arrowleft','arrowright','arrowdown','arrowup',' ','p'].includes(key)) e.preventDefault();
     if (key === 'arrowleft') playerMove(-1);
@@ -528,23 +774,33 @@
     else if (key === 'p') togglePause();
   }, { passive: false });
 
-  const bind = (id, action) => {
+  const bind = (id, action, unlockAudio = true) => {
     const el = document.getElementById(id);
-    el.addEventListener('pointerdown', (e) => { e.preventDefault(); action(); });
+    el.addEventListener('pointerdown', async (e) => {
+      e.preventDefault();
+      if (unlockAudio) await ensureAudio();
+      action();
+    });
   };
   bind('leftBtn', () => playerMove(-1));
   bind('rightBtn', () => playerMove(1));
   bind('downBtn', () => playerDrop(true));
   bind('rotateBtn', () => playerRotate(1));
   bind('dropBtn', hardDrop);
+  bind('soundBtn', toggleSound, false);
   bind('pauseBtn', togglePause);
   bind('pauseMobileBtn', togglePause);
   bind('resetBtn', resetGame);
   bind('overlayRestart', () => paused && !gameOver ? togglePause() : resetGame());
+  bind('saveNameBtn', registerGameOverScore);
+  playerNameEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') registerGameOverScore();
+  });
 
   let touchStartX = 0;
   let touchStartY = 0;
   boardCanvas.addEventListener('touchstart', (e) => {
+    ensureAudio();
     const t = e.changedTouches[0];
     touchStartX = t.clientX;
     touchStartY = t.clientY;
@@ -559,6 +815,9 @@
     else if (dy > 35) hardDrop();
   }, { passive: true });
 
+  const savedName = safeLoad(NAME_KEY, '');
+  if (savedName && savedName !== '名無し') playerNameEl.value = savedName;
+  renderRanking();
   resetGame();
 })();
 </script>
