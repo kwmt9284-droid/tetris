@@ -132,25 +132,37 @@
   }
   .controls {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-areas:
+      ". rotate drop"
+      "left down right"
+      "pause pause pause";
     gap: 9px;
     margin-top: 12px;
+    align-items: center;
   }
   .control-btn {
     min-height: 58px;
     font-size: 25px;
     user-select: none;
   }
-  .wide { grid-column: span 2; font-size: 17px; }
+  .wide { font-size: 17px; }
   .drop { background: linear-gradient(135deg, #ffb24a, #ff6876); }
+  #leftBtn { grid-area: left; }
+  #rotateBtn { grid-area: rotate; }
+  #rightBtn { grid-area: right; }
+  #downBtn { grid-area: down; }
   #dropBtn {
-    margin-top: 16px;
-    min-height: 46px;
-    width: 82%;
-    justify-self: center;
-    font-size: 14px;
-    padding: 8px 10px;
+    grid-area: drop;
+    min-height: 44px;
+    width: 92%;
+    justify-self: end;
+    align-self: end;
+    font-size: 12px;
+    padding: 7px 6px;
+    line-height: 1.15;
   }
+  #pauseMobileBtn { grid-area: pause; min-height: 48px; }
   .rotate { background: linear-gradient(135deg, #6c7dff, #af62ff); }
   .ranking-panel {
     margin-top: 14px;
@@ -253,11 +265,11 @@
   </div>
 
   <div class="controls">
-    <button id="leftBtn" class="control-btn">◀</button>
-    <button id="rotateBtn" class="control-btn rotate">↻</button>
-    <button id="rightBtn" class="control-btn">▶</button>
-    <button id="downBtn" class="control-btn">▼</button>
-    <button id="dropBtn" class="control-btn wide drop">一気に落下</button>
+    <button id="rotateBtn" class="control-btn rotate" aria-label="回転">↻</button>
+    <button id="dropBtn" class="control-btn drop">一気に<br>落下</button>
+    <button id="leftBtn" class="control-btn" aria-label="左へ移動">◀</button>
+    <button id="downBtn" class="control-btn" aria-label="下へ移動">▼</button>
+    <button id="rightBtn" class="control-btn" aria-label="右へ移動">▶</button>
     <button id="pauseMobileBtn" class="control-btn wide">一時停止</button>
   </div>
   <section id="rankingPanel" class="ranking-panel" aria-labelledby="rankingTitle" hidden>
