@@ -103,6 +103,43 @@
   }
   .overlay-title { font-size: 27px; font-weight: 900; margin-bottom: 8px; }
   .overlay-text { color: var(--muted); margin-bottom: 14px; }
+  .overlay.clear-mode {
+    align-items: flex-end;
+    justify-content: center;
+    padding: 12px;
+    background: linear-gradient(to top, rgba(3, 6, 15, 0.22) 0%, rgba(3, 6, 15, 0.02) 34%, rgba(3, 6, 15, 0) 70%);
+  }
+  .overlay.clear-mode .overlay-card {
+    width: min(94%, 280px);
+    padding: 16px 18px 18px;
+    border-radius: 22px;
+    background: rgba(11, 17, 38, 0.76);
+    border: 1px solid rgba(255,255,255,0.20);
+    box-shadow: 0 16px 36px rgba(0,0,0,0.36);
+    backdrop-filter: blur(4px);
+  }
+  .overlay.clear-mode .overlay-title {
+    font-size: clamp(40px, 10vw, 58px);
+    line-height: 1.05;
+    letter-spacing: 0.03em;
+    color: #ffffff;
+    text-shadow: 0 4px 16px rgba(0,0,0,0.55), 0 0 18px rgba(255,236,153,0.28);
+    margin-bottom: 10px;
+  }
+  .overlay.clear-mode .overlay-text {
+    font-size: 16px;
+    line-height: 1.5;
+    color: #f3f6ff;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.45);
+  }
+  .overlay.clear-mode .overlay-title,
+  .overlay.clear-mode .overlay-text {
+    display: none;
+  }
+  .overlay.clear-mode .overlay-card {
+    margin-bottom: 8px;
+    background: rgba(11, 17, 38, 0.58);
+  }
   .restart-main { width: 100%; padding: 13px; background: linear-gradient(135deg, #44d7ff, #6175ff); }
   .side {
     display: flex;
@@ -158,6 +195,7 @@
   #pauseMobileBtn {
     grid-area: pause;
     width: 100%;
+    margin-top: 34px;
   }
   .rotate { background: linear-gradient(135deg, #6c7dff, #af62ff); }
   .ranking-panel {
@@ -200,6 +238,7 @@
     .card { padding: 8px; }
     .value { font-size: 20px; }
     .control-btn { min-height: 54px; }
+    .overlay.clear-mode .overlay-title { font-size: 48px; }
   }
 </style>
 </head>
@@ -293,7 +332,7 @@
   const nameSaveMessage = document.getElementById('nameSaveMessage');
   const rankingListEl = document.getElementById('rankingList');
   const rankingPanel = document.getElementById('rankingPanel');
-  const RANKING_KEY = 'tetrisRankingV1';
+  const RANKING_API_URL = 'PASTE_YOUR_APPS_SCRIPT_URL_HERE';
   const NAME_KEY = 'tetrisPlayerNameV1';
 
   const COLORS = [
@@ -328,8 +367,11 @@
   let lastTime;
   let paused;
   let gameOver;
+  let gameClear;
   let animationId;
   let scoreSavedForCurrentGame = false;
+  let fireworks = [];
+  let nextFireworkAt = 0;
 
   let audioCtx = null;
   let masterGain = null;
@@ -338,11 +380,22 @@
   let soundEnabled = true;
   let audioUnlocked = false;
 
-  const BGM_NOTES = [
-    329.63, 246.94, 261.63, 293.66, 261.63, 246.94, 220.00, 220.00,
-    261.63, 329.63, 293.66, 261.63, 246.94, 246.94, 261.63, 293.66,
-    329.63, 261.63, 220.00, 220.00, 0, 293.66, 349.23, 440.00
+  const BGM_LEVELS = [
+    { tempo: 185, wave: 'square', notes: [329.63,246.94,261.63,293.66,261.63,246.94,220.00,220.00,261.63,329.63,293.66,261.63,246.94,246.94,261.63,293.66] },
+    { tempo: 175, wave: 'triangle', notes: [261.63,293.66,329.63,392.00,329.63,293.66,261.63,220.00,246.94,293.66,349.23,329.63,293.66,261.63,246.94,220.00] },
+    { tempo: 165, wave: 'square', notes: [392.00,349.23,329.63,293.66,329.63,349.23,392.00,440.00,392.00,329.63,293.66,261.63,293.66,329.63,349.23,392.00] },
+    { tempo: 155, wave: 'triangle', notes: [220.00,261.63,329.63,261.63,293.66,349.23,440.00,349.23,329.63,293.66,261.63,246.94,220.00,246.94,261.63,293.66] },
+    { tempo: 145, wave: 'square', notes: [440.00,392.00,349.23,329.63,293.66,329.63,349.23,392.00,440.00,493.88,440.00,392.00,349.23,329.63,293.66,261.63] },
+    { tempo: 135, wave: 'sawtooth', notes: [261.63,329.63,392.00,523.25,493.88,440.00,392.00,329.63,293.66,349.23,440.00,523.25,440.00,392.00,329.63,293.66] },
+    { tempo: 125, wave: 'square', notes: [329.63,392.00,493.88,587.33,523.25,493.88,440.00,392.00,349.23,440.00,523.25,659.25,587.33,523.25,493.88,440.00] },
+    { tempo: 115, wave: 'sawtooth', notes: [392.00,493.88,587.33,698.46,659.25,587.33,523.25,493.88,440.00,523.25,659.25,783.99,698.46,659.25,587.33,523.25] },
+    { tempo: 92, wave: 'sawtooth', notes: [392.00,523.25,659.25,783.99,659.25,783.99,987.77,1046.50,783.99,698.46,659.25,587.33,659.25,783.99,880.00,987.77,1046.50,987.77,880.00,783.99,698.46,659.25,587.33,523.25] }
   ];
+
+  const ENDING_MUSIC = {
+    tempo: 210,
+    notes: [523.25,659.25,783.99,1046.50,0,783.99,880.00,987.77,1046.50,0,987.77,880.00,783.99,659.25,698.46,783.99,0,659.25,783.99,1046.50,1318.51,0,1046.50,987.77,880.00,783.99,698.46,659.25,523.25,0]
+  };
 
   async function ensureAudio() {
     if (!soundEnabled) return false;
@@ -394,18 +447,44 @@
     [329.63, 293.66, 261.63, 196.00, 130.81].forEach((n, i) => tone(n, 0.22, 'sawtooth', 0.13, i * 0.14));
   }
 
-  function startBgm() {
-    if (!soundEnabled || bgmTimer || paused || gameOver || !audioCtx || audioCtx.state !== 'running') return;
+  function playClearSound() {
+    stopBgm();
+    [523.25, 659.25, 783.99, 1046.50, 1318.51].forEach((n, i) => tone(n, 0.22, 'triangle', 0.15, i * 0.10));
+    [392.00, 523.25, 659.25, 783.99, 1046.50].forEach((n, i) => tone(n, 0.38, 'sine', 0.065, 0.48 + i * 0.08));
+    setTimeout(() => {
+      if (gameClear && soundEnabled) startEndingBgm();
+    }, 1050);
+  }
+
+  function startEndingBgm() {
+    if (!soundEnabled || bgmTimer || !gameClear || !audioCtx || audioCtx.state !== 'running') return;
+    bgmStep = 0;
     bgmTimer = setInterval(() => {
-      if (paused || gameOver || !soundEnabled) return;
-      const note = BGM_NOTES[bgmStep % BGM_NOTES.length];
+      if (!gameClear || !soundEnabled) return;
+      const note = ENDING_MUSIC.notes[bgmStep % ENDING_MUSIC.notes.length];
       if (note) {
-        tone(note, 0.14, 'square', 0.09);
-        tone(note / 2, 0.18, 'triangle', 0.055);
-        if (bgmStep % 2 === 0) tone(82.41, 0.07, 'sine', 0.045);
+        tone(note, 0.32, 'triangle', 0.085);
+        tone(note / 2, 0.40, 'sine', 0.045);
+        if (bgmStep % 4 === 0) tone(130.81, 0.16, 'sine', 0.035);
       }
       bgmStep++;
-    }, 165);
+    }, ENDING_MUSIC.tempo);
+  }
+
+  function startBgm() {
+    if (!soundEnabled || bgmTimer || paused || gameOver || !audioCtx || audioCtx.state !== 'running') return;
+    const music = BGM_LEVELS[Math.min(Math.max(level, 1), 9) - 1];
+    bgmStep = 0;
+    bgmTimer = setInterval(() => {
+      if (paused || gameOver || !soundEnabled) return;
+      const note = music.notes[bgmStep % music.notes.length];
+      if (note) {
+        tone(note, 0.14, music.wave, 0.09);
+        tone(note / 2, 0.18, 'triangle', 0.055);
+        if (bgmStep % 2 === 0) tone(82.41 + (level - 1) * 4, 0.07, 'sine', 0.045);
+      }
+      bgmStep++;
+    }, music.tempo);
   }
 
   function stopBgm() {
@@ -419,7 +498,8 @@
     soundBtn.textContent = soundEnabled ? '🔊 音あり' : '🔇 音なし';
     if (soundEnabled) {
       await ensureAudio();
-      startBgm();
+      if (gameClear) startEndingBgm();
+      else startBgm();
     } else {
       stopBgm();
       if (masterGain && audioCtx) masterGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
@@ -445,52 +525,109 @@
     return value.trim().replace(/\s+/g, ' ').slice(0, 10) || '名無し';
   }
 
-  function getRanking() {
-    const data = safeLoad(RANKING_KEY, []);
-    return Array.isArray(data) ? data : [];
+  function isRankingApiConfigured() {
+    return RANKING_API_URL.startsWith('https://script.google.com/macros/s/');
   }
 
-  function renderRanking() {
-    const ranking = getRanking().slice(0, 5);
+  function setRankingMessage(message, isError = false) {
+    nameSaveMessage.textContent = message;
+    nameSaveMessage.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+  }
+
+  async function fetchSharedRanking() {
+    if (!isRankingApiConfigured()) return [];
+    const separator = RANKING_API_URL.includes('?') ? '&' : '?';
+    const response = await fetch(`${RANKING_API_URL}${separator}action=list&_=${Date.now()}`, {
+      method: 'GET',
+      cache: 'no-store',
+      redirect: 'follow'
+    });
+    if (!response.ok) throw new Error(`ランキング取得失敗: ${response.status}`);
+    const result = await response.json();
+    if (!result.ok || !Array.isArray(result.ranking)) throw new Error(result.message || 'ランキング形式が不正です');
+    return result.ranking;
+  }
+
+  async function renderRanking() {
     rankingListEl.innerHTML = '';
-    if (ranking.length === 0) {
+    const loading = document.createElement('li');
+    loading.className = 'ranking-empty';
+    loading.textContent = isRankingApiConfigured() ? 'ランキングを読み込み中…' : '共有ランキングのURLが未設定です';
+    rankingListEl.appendChild(loading);
+
+    if (!isRankingApiConfigured()) return;
+
+    try {
+      const ranking = (await fetchSharedRanking()).slice(0, 5);
+      rankingListEl.innerHTML = '';
+      if (ranking.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'ranking-empty';
+        li.textContent = 'まだ記録がありません';
+        rankingListEl.appendChild(li);
+        return;
+      }
+
+      ranking.forEach((entry, index) => {
+        const li = document.createElement('li');
+        li.className = 'ranking-item';
+        const no = document.createElement('span');
+        no.className = 'rank-no';
+        no.textContent = `${index + 1}位`;
+        const name = document.createElement('span');
+        name.className = 'rank-name';
+        name.textContent = entry.name;
+        const point = document.createElement('span');
+        point.className = 'rank-score';
+        point.textContent = `${Number(entry.score || 0).toLocaleString('ja-JP')}点`;
+        li.append(no, name, point);
+        rankingListEl.appendChild(li);
+      });
+    } catch (error) {
+      rankingListEl.innerHTML = '';
       const li = document.createElement('li');
       li.className = 'ranking-empty';
-      li.textContent = 'まだ記録がありません';
+      li.textContent = 'ランキングを読み込めませんでした';
       rankingListEl.appendChild(li);
-      return;
+      console.error(error);
     }
-    ranking.forEach((entry, index) => {
-      const li = document.createElement('li');
-      li.className = 'ranking-item';
-      const no = document.createElement('span');
-      no.className = 'rank-no';
-      no.textContent = `${index + 1}位`;
-      const name = document.createElement('span');
-      name.className = 'rank-name';
-      name.textContent = entry.name;
-      const point = document.createElement('span');
-      point.className = 'rank-score';
-      point.textContent = `${Number(entry.score || 0).toLocaleString('ja-JP')}点`;
-      li.append(no, name, point);
-      rankingListEl.appendChild(li);
-    });
   }
 
-  function registerGameOverScore() {
+  async function registerGameOverScore() {
     if (!gameOver || scoreSavedForCurrentGame) return;
+    if (!isRankingApiConfigured()) {
+      setRankingMessage('Apps ScriptのURLをindex.htmlに設定してください', true);
+      return;
+    }
+
     const name = cleanName(playerNameEl.value || safeLoad(NAME_KEY, '名無し'));
     playerNameEl.value = name === '名無し' ? '' : name;
     safeSave(NAME_KEY, name);
-    scoreSavedForCurrentGame = true;
-    const ranking = getRanking();
-    ranking.push({ name, score, lines, date: Date.now() });
-    ranking.sort((a, b) => Number(b.score || 0) - Number(a.score || 0) || Number(b.lines || 0) - Number(a.lines || 0));
-    safeSave(RANKING_KEY, ranking.slice(0, 20));
-    renderRanking();
     saveNameBtn.disabled = true;
-    saveNameBtn.textContent = '登録済み';
-    nameSaveMessage.textContent = `${name}さんの記録を登録しました`;
+    saveNameBtn.textContent = '登録中…';
+    setRankingMessage('ランキングへ送信中…');
+
+    try {
+      const response = await fetch(RANKING_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'add', name, score, lines }),
+        redirect: 'follow'
+      });
+      if (!response.ok) throw new Error(`ランキング登録失敗: ${response.status}`);
+      const result = await response.json();
+      if (!result.ok) throw new Error(result.message || 'ランキング登録に失敗しました');
+
+      scoreSavedForCurrentGame = true;
+      saveNameBtn.textContent = '登録済み';
+      setRankingMessage(`${name}さんの記録を登録しました`);
+      await renderRanking();
+    } catch (error) {
+      saveNameBtn.disabled = false;
+      saveNameBtn.textContent = 'ランキング登録';
+      setRankingMessage('登録できませんでした。通信状態とURLを確認してください', true);
+      console.error(error);
+    }
   }
 
   function createMatrix(w, h) {
@@ -504,6 +641,7 @@
   }
 
   function resetGame() {
+    stopBgm();
     arena = createMatrix(COLS, ROWS);
     score = 0;
     lines = 0;
@@ -513,10 +651,13 @@
     lastTime = performance.now();
     paused = false;
     gameOver = false;
+    gameClear = false;
     scoreSavedForCurrentGame = false;
+    fireworks = [];
+    nextFireworkAt = 0;
     nextPiece = randomPiece();
     player = { pos: { x: 0, y: 0 }, matrix: null };
-    overlay.classList.remove('show');
+    overlay.classList.remove('show', 'clear-mode');
     gameOverNameEntry.hidden = true;
     rankingPanel.hidden = true;
     saveNameBtn.disabled = false;
@@ -577,10 +718,20 @@
       const points = [0, 100, 300, 500, 800][rowCount] * level;
       score += points;
       lines += rowCount;
-      level = Math.floor(lines / 10) + 1;
+      const oldLevel = level;
+      const clearedFinalStage = lines >= 90;
+      level = Math.min(9, Math.floor(lines / 10) + 1);
       dropInterval = Math.max(120, 850 - (level - 1) * 70);
       updateStats();
       playLineSound(rowCount);
+      if (clearedFinalStage) {
+        clearGame();
+        return;
+      }
+      if (level !== oldLevel) {
+        stopBgm();
+        startBgm();
+      }
     }
   }
 
@@ -625,7 +776,7 @@
       merge(arena, player);
       playLockSound();
       sweep();
-      spawnPlayer();
+      if (!gameOver) spawnPlayer();
     } else if (manual) {
       score += 1;
       updateStats();
@@ -646,7 +797,7 @@
     merge(arena, player);
     playDropSound();
     sweep();
-    spawnPlayer();
+    if (!gameOver) spawnPlayer();
     updateStats();
     dropCounter = 0;
   }
@@ -680,7 +831,175 @@
     }
   }
 
+  function spawnFirework() {
+    const x = 26 + Math.random() * (boardCanvas.width - 52);
+    const y = 42 + Math.random() * 180;
+    const hue = Math.random() * 360;
+    const particles = [];
+    const count = 58 + ((Math.random() * 34) | 0);
+    const ringCount = 18 + ((Math.random() * 10) | 0);
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      const speed = 1.4 + Math.random() * 3.2;
+      particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1, hue, size: 1.8 + Math.random() * 2.8 });
+    }
+    for (let i = 0; i < ringCount; i++) {
+      const angle = (Math.PI * 2 * i) / ringCount + Math.random() * 0.18;
+      const speed = 3.6 + Math.random() * 1.7;
+      particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1, hue: (hue + 45) % 360, size: 3.2 + Math.random() * 1.8 });
+    }
+    fireworks.push({ particles, flash: 1 });
+  }
+
+  function updateFireworks() {
+    const now = performance.now();
+    if (now > nextFireworkAt) {
+      spawnFirework();
+      if (Math.random() > 0.45) spawnFirework();
+      nextFireworkAt = now + 110 + Math.random() * 120;
+    }
+    fireworks.forEach(fw => {
+      fw.flash *= 0.88;
+      fw.particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.992;
+        p.vy = p.vy * 0.992 + 0.028;
+        p.life -= 0.013;
+      });
+      fw.particles = fw.particles.filter(p => p.life > 0);
+    });
+    fireworks = fireworks.filter(fw => fw.flash > 0.03 || fw.particles.length > 0);
+  }
+
+  function drawKremlinScene() {
+    const w = boardCanvas.width;
+    const h = boardCanvas.height;
+    const gradient = ctx.createLinearGradient(0, 0, 0, h);
+    gradient.addColorStop(0, '#07101f');
+    gradient.addColorStop(0.38, '#0d2147');
+    gradient.addColorStop(0.72, '#27153a');
+    gradient.addColorStop(1, '#170d18');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = 'rgba(255,241,189,0.98)';
+    ctx.beginPath();
+    ctx.arc(w - 54, 62, 24, 0, Math.PI * 2);
+    ctx.fill();
+
+    for (let i = 0; i < 65; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${0.18 + ((i % 5) * 0.12)})`;
+      ctx.fillRect((i * 37) % w, (i * 61) % 210, 2, 2);
+    }
+
+    const groundY = h - 86;
+    ctx.fillStyle = '#2b1620';
+    ctx.fillRect(0, groundY, w, h - groundY);
+
+    ctx.fillStyle = '#671120';
+    ctx.fillRect(0, groundY - 98, w, 98);
+    ctx.fillStyle = '#7f1629';
+    ctx.fillRect(0, groundY - 104, w, 8);
+
+    const drawTower = (x, baseY, bodyW, bodyH, roofH, glow=false) => {
+      ctx.fillStyle = '#a11f33';
+      ctx.fillRect(x, baseY - bodyH, bodyW, bodyH);
+      ctx.fillStyle = '#d12d46';
+      ctx.beginPath();
+      ctx.moveTo(x - 2, baseY - bodyH);
+      ctx.lineTo(x + bodyW / 2, baseY - bodyH - roofH);
+      ctx.lineTo(x + bodyW + 2, baseY - bodyH);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#f7d96b';
+      const sx = x + bodyW / 2;
+      const sy = baseY - bodyH - roofH - 15;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      for (let i = 0; i < 5; i++) {
+        const outer = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+        const inner = outer + Math.PI / 5;
+        ctx.lineTo(sx + Math.cos(outer) * 10, sy + Math.sin(outer) * 10);
+        ctx.lineTo(sx + Math.cos(inner) * 4, sy + Math.sin(inner) * 4);
+      }
+      ctx.closePath();
+      ctx.fill();
+      if (glow) {
+        ctx.fillStyle = 'rgba(247,217,107,0.22)';
+        ctx.beginPath();
+        ctx.arc(sx, sy, 18, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(255,227,154,0.7)';
+      for (let wy = 0; wy < bodyH - 20; wy += 18) {
+        ctx.fillRect(x + bodyW / 2 - 3, baseY - bodyH + 10 + wy, 6, 10);
+      }
+    };
+
+    ctx.fillStyle = '#8f1e31';
+    ctx.fillRect(18, groundY - 86, 264, 12);
+    ctx.fillStyle = '#a9243b';
+    ctx.fillRect(18, groundY - 74, 264, 74);
+    drawTower(12, groundY, 34, 132, 60);
+    drawTower(52, groundY, 32, 100, 46);
+    drawTower(92, groundY, 42, 182, 86, true);
+    drawTower(144, groundY, 34, 118, 54);
+    drawTower(188, groundY, 36, 148, 64);
+    drawTower(234, groundY, 34, 110, 48);
+
+    ctx.fillStyle = '#d7b56d';
+    ctx.beginPath();
+    ctx.arc(113, groundY - 212, 20, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(93, groundY - 212, 40, 18);
+    ctx.fillStyle = '#f3d37c';
+    ctx.beginPath();
+    ctx.arc(202, groundY - 172, 14, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(188, groundY - 172, 28, 12);
+
+    // クリア文字を先に描く（背景側）
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(0,0,0,0.72)';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = 'rgba(255,255,255,0.96)';
+    ctx.font = '900 43px system-ui, sans-serif';
+    ctx.fillText('ゲームクリア！', w / 2, 62);
+    ctx.font = '900 18px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255,232,173,0.96)';
+    ctx.fillText('9面クリア！', w / 2, 91);
+    ctx.shadowBlur = 0;
+
+    // 花火は文字より後に描く（最前面）
+    fireworks.forEach(fw => {
+      if (fw.flash > 0.04) {
+        ctx.fillStyle = `rgba(255,255,255,${fw.flash * 0.18})`;
+        ctx.fillRect(0, 0, w, h * 0.68);
+      }
+      fw.particles.forEach(p => {
+        const alpha = Math.max(p.life, 0);
+        ctx.fillStyle = `hsla(${p.hue}, 100%, 70%, ${alpha * 0.34})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `hsla(${p.hue}, 100%, 64%, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 1.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(1.5, p.size * 0.48), 0, Math.PI * 2);
+        ctx.fill();
+      });
+    });
+  }
+
   function draw() {
+    if (gameClear) {
+      drawKremlinScene();
+      return;
+    }
     ctx.fillStyle = '#070b16';
     ctx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
     drawGrid();
@@ -712,6 +1031,7 @@
       dropCounter += delta;
       if (dropCounter > dropInterval) playerDrop(false);
     }
+    if (gameClear) updateFireworks();
     draw();
     animationId = requestAnimationFrame(update);
   }
@@ -727,9 +1047,10 @@
       overlayTitle.textContent = '一時停止';
       overlayText.textContent = '「再開」を押すと続きから遊べます';
       document.getElementById('overlayRestart').textContent = '再開';
+      overlay.classList.remove('clear-mode');
       overlay.classList.add('show');
     } else {
-      overlay.classList.remove('show');
+      overlay.classList.remove('show', 'clear-mode');
       lastTime = performance.now();
       startBgm();
     }
@@ -739,6 +1060,34 @@
     const txt = paused ? '再開' : '一時停止';
     pauseBtn.textContent = txt;
     pauseMobileBtn.textContent = txt;
+  }
+
+  function clearGame() {
+    gameOver = true;
+    gameClear = true;
+    arena = createMatrix(COLS, ROWS);
+    player.matrix = [[0]];
+    player.pos = { x: 0, y: 0 };
+    nextPiece = [[0]];
+    drawNext();
+    fireworks = [];
+    nextFireworkAt = performance.now();
+    spawnFirework();
+    spawnFirework();
+    spawnFirework();
+    spawnFirework();
+    spawnFirework();
+    playClearSound();
+    overlayTitle.textContent = 'ゲームクリア！';
+    overlayText.textContent = `9面クリア！ スコア ${score.toLocaleString('ja-JP')} 点`;
+    gameOverNameEntry.hidden = false;
+    rankingPanel.hidden = false;
+    saveNameBtn.disabled = false;
+    saveNameBtn.textContent = 'ランキング登録';
+    nameSaveMessage.textContent = '';
+    document.getElementById('overlayRestart').textContent = 'もう一度遊ぶ';
+    overlay.classList.add('show', 'clear-mode');
+    setTimeout(() => playerNameEl.focus(), 120);
   }
 
   function endGame() {
@@ -752,6 +1101,7 @@
     saveNameBtn.textContent = 'ランキング登録';
     nameSaveMessage.textContent = '';
     document.getElementById('overlayRestart').textContent = 'もう一度遊ぶ';
+    overlay.classList.remove('clear-mode');
     overlay.classList.add('show');
     setTimeout(() => playerNameEl.focus(), 120);
   }
